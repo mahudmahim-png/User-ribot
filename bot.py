@@ -35,11 +35,12 @@ app_bot = Client(
 )
 
 # ================= MEMORY =================
-last_replied = {}
-cooldown_time = 1000  # 15 minutes
+last_replied = {}          # user_id : last_reply_time
+cooldown_time = 1200        # 5 minutes
+max_users_memory = 2000    # max users tracked safely
 
 # ================= HANDLER =================
-@app_bot.on_message(filters.private & ~filters.me)
+@app_bot.on_message(filters.private)
 async def auto_reply(client, message):
     try:
         user_id = message.from_user.id
@@ -48,19 +49,18 @@ async def auto_reply(client, message):
         print(f"📩 Message from {user_id}")
 
         # ===== Anti Spam Cooldown =====
-        if user_id in last_replied:
-            if now - last_replied[user_id] < cooldown_time:
-                print("⏳ Cooldown active, skipping...")
-                return
+        if user_id in last_replied and now - last_replied[user_id] < cooldown_time:
+            print(f"⏳ Cooldown active for {user_id}, skipping...")
+            return
 
         # ===== Human-like Delay =====
-        await asyncio.sleep(2 + (user_id % 3))
+        await asyncio.sleep(2 + (user_id % 3))  # 2–4 sec delay
 
         # ===== Typing Action =====
         await client.send_chat_action(message.chat.id, ChatAction.TYPING)
         await asyncio.sleep(2)
 
-        # ===== PRO LEVEL AUTO REPLY MESSAGE =====
+        # ===== Pro-Level Auto Reply =====
         reply_text = (
             "👋 **আসসালামু আলাইকুম / Hello!**\n\n"
             "🤖 আমি **ᴜɴᴋɴᴏᴡɴ 〆 AI Assistant**\n\n"
@@ -70,14 +70,28 @@ async def auto_reply(client, message):
             "🙏 ধন্যবাদ আপনার ধৈর্যের জন্য ❤️"
         )
 
-        await message.reply_text(reply_text)
+        # ===== Send Reply =====
+        reply_msg = await message.reply_text(reply_text)
 
         # ===== Save Time =====
         last_replied[user_id] = now
 
         # ===== Memory Cleanup =====
-        if len(last_replied) > 5000:
-            last_replied.clear()
+        if len(last_replied) > max_users_memory:
+            print("🧹 Memory cleanup: removing oldest users")
+            oldest_users = sorted(last_replied.items(), key=lambda x: x[1])[:500]
+            for u, _ in oldest_users:
+                last_replied.pop(u)
+
+        # ===== Check Owner Online & Delete Reply =====
+        await asyncio.sleep(2)  # short delay before checking
+        me = await client.get_me()
+        if hasattr(me, 'status') and me.status == "online":
+            try:
+                await reply_msg.delete()
+                print(f"✅ Reply deleted for {user_id} because owner is online")
+            except Exception as e:
+                print(f"⚠️ Could not delete reply: {e}")
 
         print(f"✅ Replied to {user_id}")
 
@@ -88,5 +102,5 @@ async def auto_reply(client, message):
 # ================= MAIN =================
 if __name__ == "__main__":
     Thread(target=run_web, daemon=True).start()
-    print("🚀 ᴜɴᴋɴᴏᴡɴ 〆 AI Userbot Started...")
+    print("🚀 Safe Userbot Started (Owner Online Delete + DM Only)")
     app_bot.run()
