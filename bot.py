@@ -1,108 +1,70 @@
 import os
-import asyncio
 import time
-import random
-from datetime import datetime
-from threading import Thread
+import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import Message
 from flask import Flask
+from threading import Thread
 
-# --- Web Server for Render ---
+# --- Render Port Binding (Flask) ---
 app = Flask(__name__)
+
 @app.route('/')
-def home():
-    return "ᴜɴᴋɴᴏᴡɴ 〆 ᴀɪ is running stealthily..."
+def health_check():
+    return "Bot is Running!"
 
 def run_web():
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    # Render-এর জন্য পোর্ট সেটআপ
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
 
-# --- Configuration ---
+# --- Bot Configuration ---
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 SESSION = os.environ.get("SESSION_STRING")
 
-client = Client("unknown_userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION)
+# ক্লায়েন্ট সেটআপ
+app_bot = Client(
+    "my_userbot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    session_string=SESSION
+)
 
-# AI Memory
-sent_messages = {} 
-replied_users = {} 
+# রিপ্লাই মেমোরি (যাতে স্প্যাম না হয়)
+last_replied = {}
 
-def get_wish():
-    hour = datetime.now().hour
-    if 5 <= hour < 12: return "Good Morning"
-    elif 12 <= hour < 18: return "Good Afternoon"
-    else: return "Good Evening"
-
-@client.on_message(filters.private & ~filters.me & ~filters.bot)
-async def stealth_reply(bot: Client, message: Message):
-    user_id = message.chat.id
+@app_bot.on_message(filters.private & ~filters.me & ~filters.bot)
+async def auto_reply_handler(client, message):
+    user_id = message.from_user.id
     current_time = time.time()
 
-    # 8-hour gap (Safe limit)
-    if user_id in replied_users:
-        if current_time - replied_users[user_id] < 28800:
-            return 
+    # একই মানুষকে ৫ মিনিটের মধ্যে বারবার রিপ্লাই দিবে না
+    if user_id in last_replied and (current_time - last_replied[user_id] < 300):
+        return
 
     try:
-        me = await bot.get_me()
-        
-        # Sudhu offline thaklei reply jabe
-        if me.status != "online":
-            # 1. Random delay (3 to 7 seconds) - Pattern break korar jonno
-            await asyncio.sleep(random.randint(3, 7))
-            
-            wish = get_wish()
-            name = "ᴜɴᴋɴᴏᴡɴ 〆"
-            
-            # Smart & Natural Text
-            response_text = (
-                f"{wish}! ʜᴇʟʟᴏ, ɪ ᴀᴍ {name}'s ᴀssɪsᴛᴀɴᴛ. ✨\n\n"
-                "ʜᴇ ɪs ᴄᴜʀʀᴇɴᴛʟʏ ᴀᴡᴀʏ ꜰʀᴏᴍ ʜɪs ᴘʜᴏɴᴇ. ɪ'ᴠᴇ ɴᴏᴛɪꜰɪᴇᴅ ʜɪᴍ ᴀʙᴏᴜᴛ ʏᴏᴜʀ ᴍᴇssᴀɢᴇ. 📥\n\n"
-                "ʜᴇ ᴡɪʟʟ ɢᴇᴛ ʙᴀᴄᴋ ᴛᴏ ʏᴏᴜ ᴀs sᴏᴏɴ ᴀs ʜᴇ's ᴏɴʟɪɴᴇ. ᴛʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ʙᴇ ᴀᴜᴛᴏ-ᴅᴇʟᴇᴛᴇᴅ ᴛʜᴇɴ. 🛡️"
-            )
+        # টাইপিং ইফেক্ট
+        await client.send_chat_action(message.chat.id, "typing")
+        await asyncio.sleep(2) 
 
-            # 2. Start "Typing" action
-            await bot.send_chat_action(user_id, "typing")
-            await asyncio.sleep(random.randint(2, 4)) # Simulation delay
+        # মেসেজ টেক্সট
+        reply_text = (
+            "**👋 Hello! I am ᴜɴᴋɴᴏᴡɴ 〆 AI.**\n\n"
+            "My owner is currently offline or busy. 📴\n"
+            "Your message has been received. Please wait for a while! ⏳"
+        )
 
-            # 3. Send Message
-            reply = await message.reply(response_text)
-            
-            # 4. Mark the original message as Read (Smart Move)
-            await bot.read_chat_history(user_id)
-            
-            sent_messages[user_id] = reply.id
-            replied_users[user_id] = current_time
-            
+        await message.reply_text(reply_text)
+        last_replied[user_id] = current_time
+        print(f"Successfully replied to {user_id}")
+
     except Exception as e:
-        print(f"Stealth Error: {e}")
-
-@client.on_user_status()
-async def auto_cleanup(bot: Client, update):
-    try:
-        me = await bot.get_me()
-        if update.id == me.id and update.status == "online":
-            if sent_messages:
-                for chat_id, msg_id in list(sent_messages.items()):
-                    try:
-                        # Online houar 5 sec por delete hobe (looks natural)
-                        await asyncio.sleep(5)
-                        await bot.delete_messages(chat_id, msg_id)
-                        del sent_messages[chat_id]
-                    except: pass
-    except Exception as e:
-        print(f"Cleanup Error: {e}")
-
-async def start_bot():
-    await client.start()
-    print(">>> ᴜɴᴋɴᴏᴡɴ 〆 ᴀɪ (Stealth Mode) Is Live <<<")
-    await asyncio.Event().wait()
+        print(f"Error while replying: {e}")
 
 if __name__ == "__main__":
+    # ওয়েব সার্ভার চালু করা (Render-কে সজাগ রাখতে)
     Thread(target=run_web, daemon=True).start()
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(start_bot())
-    except (KeyboardInterrupt, SystemExit):
-        pass
+    
+    # বট রান করা
+    print(">>> ᴜɴᴋɴᴏᴡɴ 〆 AI starting now...")
+    app_bot.run()
