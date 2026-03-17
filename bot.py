@@ -36,7 +36,7 @@ app_bot = Client(
 
 # ================= MEMORY =================
 last_replied = {}
-cooldown_time = 300  # 5 minutes
+cooldown_time = 1000  # 15 minutes
 
 # ================= HANDLER =================
 @app_bot.on_message(filters.private & ~filters.me)
